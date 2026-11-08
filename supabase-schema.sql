@@ -52,6 +52,22 @@ CREATE TABLE IF NOT EXISTS public.chart_completions (
 CREATE INDEX IF NOT EXISTS idx_chart_completions_operator ON public.chart_completions(operator_id);
 CREATE INDEX IF NOT EXISTS idx_chart_completions_completed_at ON public.chart_completions(completed_at DESC);
 
+-- 4b. Medical Insurance Form Data Records Table
+CREATE TABLE IF NOT EXISTS public.medical_records (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL,
+    operator_name TEXT NOT NULL,
+    record_no TEXT,
+    image_name TEXT,
+    customer_name TEXT,
+    total_amount TEXT,
+    form_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_medical_records_operator ON public.medical_records(operator_id);
+CREATE INDEX IF NOT EXISTS idx_medical_records_created_at ON public.medical_records(created_at DESC);
+
 -- 5. Create Storage Bucket for Audit Photos
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('audit-photos', 'audit-photos', true)

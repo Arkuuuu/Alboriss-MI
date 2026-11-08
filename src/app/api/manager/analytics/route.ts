@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const operators = getOperatorAnalytics();
+    const operators = await getOperatorAnalytics();
     const overview = await getOverallMetrics();
     const auditLogs = await getAuditLogs();
 

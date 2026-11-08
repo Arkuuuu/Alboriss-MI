@@ -11,6 +11,7 @@ import {
 import { sanitizeInput } from "@/lib/security";
 import { uploadAuditPhotoToSupabase } from "@/lib/supabase";
 import { DeviceTelemetry, LocationTelemetry } from "@/types/auth";
+import { signSessionToken } from "@/lib/session-token";
 
 export async function POST(req: NextRequest) {
   try {
@@ -142,7 +143,14 @@ export async function POST(req: NextRequest) {
       clientIp,
     });
 
-    response.cookies.set("auth_session", `${matched.id}:${Date.now()}`, {
+    const sessionToken = await signSessionToken(
+      matched.id,
+      matched.username,
+      "operator",
+      8 * 60 * 60
+    );
+
+    response.cookies.set("auth_session", sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",

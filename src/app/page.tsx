@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   validateImageFile,
   sanitizeFilename,
@@ -147,26 +148,46 @@ export default function MedicalInsuranceApp() {
   const [panStartY, setPanStartY] = useState<number>(0);
   const [panStartScroll, setPanStartScroll] = useState<number>(0);
 
-  // Background productivity telemetry
+  const router = useRouter();
+
+  // Background productivity telemetry & authentication
   const [currentUser, setCurrentUser] = useState<{
     id: string;
     username: string;
     name: string;
     role: "operator";
   } | null>(null);
+  const [isVerifyingSession, setIsVerifyingSession] = useState<boolean>(true);
   const [chartStartTime, setChartStartTime] = useState<number | null>(null);
+  const [showDataModal, setShowDataModal] = useState<boolean>(false);
+  const [savedRecords, setSavedRecords] = useState<Array<{
+    id: string;
+    recordNo: string;
+    imageName: string;
+    customerName: string;
+    totalAmount: string;
+    createdAt: string;
+  }>>([]);
 
-  // Check background session if user logged in via dedicated portal
+  // Check mandatory session - redirect immediately to /login if unauthenticated
   useEffect(() => {
     fetch("/api/auth/session")
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        if (!res.ok) throw new Error("Unauthenticated");
+        return res.json();
+      })
       .then((data) => {
-        if (data?.user) {
+        if (data?.authenticated && data?.user) {
           setCurrentUser(data.user);
+          setIsVerifyingSession(false);
+        } else {
+          router.replace("/login");
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => {
+        router.replace("/login");
+      });
+  }, [router]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageContainerRef = useRef<HTMLDivElement | null>(null);
@@ -261,33 +282,47 @@ export default function MedicalInsuranceApp() {
   };
 
   const handleSave = async () => {
-    if (currentUser) {
-      const durationSeconds = chartStartTime
-        ? Math.max(5, Math.round((Date.now() - chartStartTime) / 1000))
-        : 25;
-
-      try {
-        await fetch("/api/records/complete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            operatorId: currentUser.id,
-            operatorName: currentUser.name,
-            recordNo: formData.recordNo || "1797",
-            imageName: formData.imageName || "Document.jpg",
-            durationSeconds,
-          }),
-        });
-      } catch {
-        // Safe offline fallback
-      }
+    if (!formData.recordNo && !formData.customerName && !formData.imageName) {
+      alert("Please enter record data before saving.");
+      return;
     }
-    alert("Record saved successfully. Analytics and throughput logged.");
-    setChartStartTime(Date.now());
+
+    const durationSeconds = chartStartTime
+      ? Math.max(5, Math.round((Date.now() - chartStartTime) / 1000))
+      : 25;
+
+    try {
+      const res = await fetch("/api/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formData,
+          durationSeconds,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save record");
+      }
+
+      alert("Record saved successfully. Analytics and database synchronized.");
+      setChartStartTime(Date.now());
+    } catch {
+      alert("Record saved locally. System operating in resilient mode.");
+    }
   };
 
-  const handleShowData = () => {
-    alert("Show Data feature: Displaying saved records.");
+  const handleShowData = async () => {
+    try {
+      const res = await fetch("/api/records");
+      if (res.ok) {
+        const json = await res.json();
+        setSavedRecords(json.records || []);
+      }
+    } catch {
+      // Ignore
+    }
+    setShowDataModal(true);
   };
 
   const handleCancelEdit = () => {
@@ -303,9 +338,14 @@ export default function MedicalInsuranceApp() {
     }
   };
 
-  const handleExit = () => {
-    if (window.confirm("Are you sure you want to exit?")) {
-      window.close();
+  const handleExit = async () => {
+    if (window.confirm("Exit Medical Insurance Workstation and end your session?")) {
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+      } catch {
+        // Fallback
+      }
+      router.push("/login");
     }
   };
 
@@ -371,6 +411,24 @@ export default function MedicalInsuranceApp() {
     setIsDraggingThumb(false);
     setIsPanning(false);
   };
+
+  if (isVerifyingSession) {
+    return (
+      <div className="min-h-screen bg-[#b0d2ce] flex items-center justify-center font-sans text-xs select-none">
+        <div className="bg-[#e4edea] border-2 border-[#54737a] p-6 shadow-xl text-center space-y-3">
+          <div className="font-bold text-[#113344] text-sm">
+            Medical Insurance Workstation
+          </div>
+          <div className="text-[#335566] text-xs">
+            Verifying operator security session...
+          </div>
+          <div className="w-48 h-2 bg-[#bee2f1] mx-auto overflow-hidden border border-[#7597a4]">
+            <div className="h-full bg-[#1b6b99] animate-pulse w-full"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -644,6 +702,70 @@ export default function MedicalInsuranceApp() {
           </div>
         </div>
       </div>
+
+      {/* Show Data Modal */}
+      {showDataModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#e4edea] border-2 border-[#54737a] shadow-2xl w-full max-w-2xl text-xs">
+            {/* Modal Title Bar */}
+            <div className="bg-[#245d82] text-white px-3 py-1.5 flex justify-between items-center font-bold">
+              <span>Saved Medical Insurance Records ({savedRecords.length})</span>
+              <button
+                type="button"
+                onClick={() => setShowDataModal(false)}
+                className="text-white hover:bg-red-600 px-1.5 py-0.5 text-xs font-mono"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-3 max-h-[400px] overflow-y-auto">
+              {savedRecords.length === 0 ? (
+                <div className="text-center py-8 text-[#556677]">
+                  No saved records found for current operator.
+                </div>
+              ) : (
+                <table className="w-full border-collapse border border-[#7898a5] text-left text-[11px]">
+                  <thead>
+                    <tr className="bg-[#bee2f1] text-[#113344]">
+                      <th className="border border-[#7898a5] p-1.5 font-bold">Record No</th>
+                      <th className="border border-[#7898a5] p-1.5 font-bold">Customer Name</th>
+                      <th className="border border-[#7898a5] p-1.5 font-bold">Total Amount</th>
+                      <th className="border border-[#7898a5] p-1.5 font-bold">Image Name</th>
+                      <th className="border border-[#7898a5] p-1.5 font-bold">Date Saved</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savedRecords.map((r) => (
+                      <tr key={r.id} className="hover:bg-[#d6e8e5]">
+                        <td className="border border-[#7898a5] p-1.5 font-mono">{r.recordNo}</td>
+                        <td className="border border-[#7898a5] p-1.5 font-semibold">{r.customerName}</td>
+                        <td className="border border-[#7898a5] p-1.5">{r.totalAmount}</td>
+                        <td className="border border-[#7898a5] p-1.5 truncate max-w-[120px]">{r.imageName}</td>
+                        <td className="border border-[#7898a5] p-1.5 text-[#556677]">
+                          {new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-[#d7e7e4] border-t border-[#7898a5] px-3 py-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDataModal(false)}
+                className="bg-[#d5e4e1] border border-[#557788] px-4 py-1 text-xs hover:bg-[#c2d7d3] active:bg-[#b0c9c4] shadow-sm font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

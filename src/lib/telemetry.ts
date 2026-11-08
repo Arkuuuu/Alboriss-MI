@@ -267,7 +267,24 @@ export async function createEmployee(
 ): Promise<{ success: boolean; employee?: Omit<Employee, "passwordHash">; error?: string }> {
   const normalizedUser = username.trim().toLowerCase();
 
-  // Validate uniqueness
+  // Validate uniqueness in Supabase if configured
+  if (isSupabaseConfigured && supabaseAdmin) {
+    try {
+      const { data: existingUser } = await supabaseAdmin
+        .from("employees")
+        .select("id")
+        .eq("username", normalizedUser)
+        .maybeSingle();
+
+      if (existingUser) {
+        return { success: false, error: "Username already exists. Please choose a unique username." };
+      }
+    } catch (e) {
+      console.warn("Supabase uniqueness check error:", e);
+    }
+  }
+
+  // Validate uniqueness in memory
   const exists = employees.some((e) => e.username.toLowerCase() === normalizedUser);
   if (exists) {
     return { success: false, error: "Username already exists. Please choose a unique username." };
@@ -521,7 +538,33 @@ export async function recordChartCompletion(
   return record;
 }
 
-export function getOperatorAnalytics(): OperatorAnalytics[] {
+export async function getOperatorAnalytics(): Promise<OperatorAnalytics[]> {
+  let records: ChartCompletionRecord[] = chartCompletions;
+
+  if (isSupabaseConfigured && supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("chart_completions")
+        .select("*")
+        .order("completed_at", { ascending: false });
+
+      if (!error && data) {
+        records = data.map((d) => ({
+          id: d.id,
+          operatorId: d.operator_id,
+          operatorName: d.operator_name,
+          recordNo: d.record_no,
+          imageName: d.image_name,
+          startedAt: d.started_at,
+          completedAt: d.completed_at,
+          durationSeconds: d.duration_seconds,
+        }));
+      }
+    } catch (e) {
+      console.warn("Supabase getOperatorAnalytics error:", e);
+    }
+  }
+
   const operatorMap = new Map<
     string,
     {
@@ -532,7 +575,7 @@ export function getOperatorAnalytics(): OperatorAnalytics[] {
     }
   >();
 
-  for (const c of chartCompletions) {
+  for (const c of records) {
     const existing = operatorMap.get(c.operatorId) || {
       name: c.operatorName,
       totalCompleted: 0,
@@ -573,9 +616,23 @@ export function getOperatorAnalytics(): OperatorAnalytics[] {
 }
 
 export async function getOverallMetrics() {
-  const analytics = getOperatorAnalytics();
+  const analytics = await getOperatorAnalytics();
   const allEmps = await getEmployees();
-  const totalCharts = chartCompletions.length;
+  let totalCharts = chartCompletions.length;
+
+  if (isSupabaseConfigured && supabaseAdmin) {
+    try {
+      const { count } = await supabaseAdmin
+        .from("chart_completions")
+        .select("*", { count: "exact", head: true });
+      if (typeof count === "number") {
+        totalCharts = count;
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
   const avgCPM =
     analytics.length > 0
       ? Number(
