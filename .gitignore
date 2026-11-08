@@ -39,4 +39,7 @@ next-env.d.ts
 # archives
 *.zip
 
+# local scripts
+push-to-github.bat
+
 
