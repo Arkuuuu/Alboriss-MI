@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #b0d2ce;
+  --input-bg: #bfe3f2;
+  --input-border: #7597a4;
+  --btn-bg: #e2dfd7;
+  --btn-border: #71706e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--app-bg);
+  font-family: "Segoe UI", Tahoma, Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #000;
+  user-select: none;
+  overflow-x: hidden;
+}
+
+/* Classic Windows bevel / borders */
+.win-btn {
+  background-color: #e2ded5;
+  border-top: 1px solid #71706d;
+  border-left: 1px solid #71706d;
+  border-right: 1px solid #5a5957;
+  border-bottom: 1px solid #5a5957;
+  box-shadow: inset 1px 1px 0px #ffffff, inset -1px -1px 0px #b8b5ad;
+  color: #000000;
+  font-size: 11.5px;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  height: 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  padding: 0 8px;
+  cursor: default;
+}
+
+.win-btn:active {
+  box-shadow: inset 1px 1px 1px #444444;
+  padding-top: 1px;
+  padding-left: 9px;
+}
+
+.win-btn-exit {
+  background-color: #080808;
+  border: 1px solid #801a1a;
+  color: #dd1111;
+  font-size: 11.5px;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  height: 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  padding: 0 10px;
+  cursor: default;
+}
+
+.win-dark-rect {
+  background-color: #080808;
+  border: 1px solid #801a1a;
+  height: 23px;
+  display: inline-block;
+}
+
+/* Classic Windows Input Field */
+.win-input {
+  background-color: #bee2f1;
+  border: 1px solid #7597a4;
+  box-shadow: inset 1px 1px 0px rgba(70, 100, 115, 0.35);
+  font-size: 11px;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  height: 19px;
+  padding: 0 3px;
+  color: #000;
+  outline: none;
+  border-radius: 0px;
+}
+
+.win-input:focus {
+  outline: none;
+  border-color: #4a7a8c;
+}
+
+/* Field label */
+.win-label {
+  font-size: 11px;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  color: #000000;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
