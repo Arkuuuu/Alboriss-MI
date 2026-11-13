@@ -69,3 +69,49 @@ export async function uploadAuditPhotoToSupabase(
   }
 }
 
+/**
+ * Uploads practice chart images dumped by Manager to Supabase Storage bucket ('practice-images').
+ */
+export async function uploadPracticeImageToSupabase(
+  imageDataUrl: string,
+  filename: string
+): Promise<string> {
+  if (!supabaseAdmin || !imageDataUrl.startsWith("data:image/")) {
+    return imageDataUrl; // Return raw data URL as fallback
+  }
+
+  try {
+    const matches = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (!matches) return imageDataUrl;
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, "base64");
+
+    const cleanName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filePath = `pool/${Date.now()}_${cleanName}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("practice-images")
+      .upload(filePath, buffer, {
+        contentType: mimeType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.warn("Supabase storage upload warning for practice image:", uploadError.message);
+      return imageDataUrl;
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from("practice-images")
+      .getPublicUrl(filePath);
+
+    return publicUrlData?.publicUrl || imageDataUrl;
+  } catch (err) {
+    console.error("Failed to upload practice image to Supabase storage:", err);
+    return imageDataUrl;
+  }
+}
+
+

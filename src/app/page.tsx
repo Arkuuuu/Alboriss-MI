@@ -3,11 +3,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  validateImageFile,
-  sanitizeFilename,
   sanitizeInput,
   safeRecordUpdate,
 } from "../lib/security";
+import WindowsOpenDialog from "../components/WindowsOpenDialog";
+import QualityAnalystModal from "../components/QualityAnalystModal";
+import { PracticeImage, QualityAuditResult, CandidateQASummary } from "../types/auth";
 
 interface FieldDef {
   label: string;
@@ -169,6 +170,24 @@ export default function MedicalInsuranceApp() {
     createdAt: string;
   }>>([]);
 
+  // Practice Pool & Quality Analyst states
+  const [isOpenFileDialog, setIsOpenFileDialog] = useState<boolean>(false);
+  const [isQaModalOpen, setIsQaModalOpen] = useState<boolean>(false);
+  const [latestQaResult, setLatestQaResult] = useState<QualityAuditResult | null>(null);
+  const [qaSummary, setQaSummary] = useState<CandidateQASummary | null>(null);
+
+  const fetchQaSummary = async () => {
+    try {
+      const res = await fetch("/api/qa/summary");
+      if (res.ok) {
+        const json = await res.json();
+        setQaSummary(json.summary || null);
+      }
+    } catch {
+      // quiet
+    }
+  };
+
   // Check mandatory session - redirect immediately to /login if unauthenticated
   useEffect(() => {
     fetch("/api/auth/session")
@@ -180,6 +199,7 @@ export default function MedicalInsuranceApp() {
         if (data?.authenticated && data?.user) {
           setCurrentUser(data.user);
           setIsVerifyingSession(false);
+          fetchQaSummary();
         } else {
           router.replace("/login");
         }
@@ -189,7 +209,6 @@ export default function MedicalInsuranceApp() {
       });
   }, [router]);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageContainerRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
@@ -236,49 +255,24 @@ export default function MedicalInsuranceApp() {
   };
 
   const handleSelectImageClick = () => {
-    fileInputRef.current?.click();
+    setIsOpenFileDialog(true);
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const validation = await validateImageFile(file);
-      if (!validation.valid) {
-        alert(validation.error || "Security check failed: invalid file.");
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-        return;
-      }
-
-      // Cleanup prior blob URL to eliminate memory leaks
-      if (imageSrc && imageSrc.startsWith("blob:")) {
-        URL.revokeObjectURL(imageSrc);
-      }
-
-      const safeName = sanitizeFilename(file.name);
-      const objectUrl = URL.createObjectURL(file);
-      setImageSrc(objectUrl);
-      setFormData((prev) =>
-        safeRecordUpdate(prev, "imageName", safeName, VALID_FIELD_NAMES)
-      );
-      setScrollPos(0);
-      setChartStartTime(Date.now());
-    }
+  const handleSelectPracticeImage = (image: PracticeImage) => {
+    setImageSrc(image.imageUrl);
+    setFormData((prev) =>
+      safeRecordUpdate(prev, "imageName", image.fileName, VALID_FIELD_NAMES)
+    );
+    setScrollPos(0);
+    setChartStartTime(Date.now());
   };
 
   const handleNew = () => {
-    if (imageSrc && imageSrc.startsWith("blob:")) {
-      URL.revokeObjectURL(imageSrc);
-    }
     setFormData({});
     setImageSrc(null);
     setImageHeight(0);
     setScrollPos(0);
     setChartStartTime(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
   };
 
   const handleSave = async () => {
@@ -305,8 +299,17 @@ export default function MedicalInsuranceApp() {
         throw new Error("Failed to save record");
       }
 
-      alert("Record saved successfully. Analytics and database synchronized.");
+      const json = await res.json();
+
+      if (json.qaResult) {
+        setLatestQaResult(json.qaResult);
+        setIsQaModalOpen(true);
+      } else {
+        alert("Record saved successfully. Analytics and database synchronized.");
+      }
+
       setChartStartTime(Date.now());
+      fetchQaSummary();
     } catch {
       alert("Record saved locally. System operating in resilient mode.");
     }
@@ -326,16 +329,11 @@ export default function MedicalInsuranceApp() {
   };
 
   const handleCancelEdit = () => {
-    if (imageSrc && imageSrc.startsWith("blob:")) {
-      URL.revokeObjectURL(imageSrc);
-    }
     setFormData({});
     setImageSrc(null);
     setImageHeight(0);
     setScrollPos(0);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    setChartStartTime(null);
   };
 
   const handleExit = async () => {
@@ -436,15 +434,6 @@ export default function MedicalInsuranceApp() {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
-      {/* Hidden File Input for Image Selection */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
       {/* 1. APPLICATION WINDOW TITLE BAR */}
       <div className="h-[28px] bg-white border-b border-[#cccccc] flex items-center justify-between px-2 select-none shrink-0">
         <div className="flex items-center space-x-2">
@@ -553,6 +542,48 @@ export default function MedicalInsuranceApp() {
               <span className="win-label text-[11.5px] font-normal text-black">
                 Time
               </span>
+            </div>
+
+            {/* 7. Quality Analyst Option */}
+            <div className="pl-4 flex items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  if (latestQaResult) {
+                    setIsQaModalOpen(true);
+                  } else if (qaSummary && qaSummary.completedCount > 0) {
+                    setLatestQaResult({
+                      imageName: "Cumulative Session Audit",
+                      accuracyPercent: qaSummary.averageAccuracy,
+                      mistakesCount: 0,
+                      totalFields: 42,
+                      passedStandard: qaSummary.isQualified,
+                      discrepancies: [],
+                      cumulativeMistakes: qaSummary.totalMistakes,
+                      cumulativeAccuracy: qaSummary.averageAccuracy,
+                      totalImagesCompleted: qaSummary.completedCount,
+                    });
+                    setIsQaModalOpen(true);
+                  } else {
+                    alert("Quality Analyst: Complete and save a practice chart to view your accuracy audit and mistakes breakdown.");
+                  }
+                }}
+                className="win-btn min-w-[125px] cursor-pointer hover:bg-[#eae6dd] flex items-center justify-center space-x-1.5 font-semibold text-[11px]"
+                title="Quality Analyst — Strict 95%+ Accuracy Requirement"
+              >
+                <span>Quality Analyst</span>
+                {qaSummary && qaSummary.completedCount > 0 && (
+                  <span
+                    className={`text-[9px] font-bold px-1 rounded ${
+                      qaSummary.isQualified
+                        ? "bg-green-700 text-white"
+                        : "bg-red-700 text-white"
+                    }`}
+                  >
+                    {qaSummary.averageAccuracy}%
+                  </span>
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -766,6 +797,20 @@ export default function MedicalInsuranceApp() {
           </div>
         </div>
       )}
+
+      {/* Windows Open Practice Document Dialog */}
+      <WindowsOpenDialog
+        isOpen={isOpenFileDialog}
+        onClose={() => setIsOpenFileDialog(false)}
+        onSelectImage={handleSelectPracticeImage}
+      />
+
+      {/* Quality Analyst Audit Report Modal */}
+      <QualityAnalystModal
+        isOpen={isQaModalOpen}
+        onClose={() => setIsQaModalOpen(false)}
+        result={latestQaResult}
+      />
     </div>
   );
 }

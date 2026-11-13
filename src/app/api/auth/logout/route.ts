@@ -11,3 +11,4 @@ export async function GET() {
   response.cookies.delete("auth_session");
   return response;
 }
+

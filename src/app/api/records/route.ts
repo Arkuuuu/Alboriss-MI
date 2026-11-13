@@ -3,6 +3,7 @@ import { getEmployees, recordChartCompletion } from "@/lib/telemetry";
 import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
 import { sanitizeInput } from "@/lib/security";
 import { verifySessionToken } from "@/lib/session-token";
+import { evaluateChartQuality } from "@/lib/practice-pool";
 
 interface SavedRecord {
   id: string;
@@ -141,9 +142,17 @@ export async function POST(req: NextRequest) {
       durationSeconds
     );
 
-    return NextResponse.json({ success: true, record: newRecord });
+    // Evaluate Quality Analyst score & accuracy
+    const qaResult = await evaluateChartQuality(matched.id, imageName, formData);
+
+    return NextResponse.json({
+      success: true,
+      record: newRecord,
+      qaResult,
+    });
   } catch (err) {
     console.error("Save medical record error:", err);
     return NextResponse.json({ error: "Failed to save record" }, { status: 500 });
   }
 }
+

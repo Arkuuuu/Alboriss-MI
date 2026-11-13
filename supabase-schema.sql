@@ -68,9 +68,38 @@ CREATE TABLE IF NOT EXISTS public.medical_records (
 CREATE INDEX IF NOT EXISTS idx_medical_records_operator ON public.medical_records(operator_id);
 CREATE INDEX IF NOT EXISTS idx_medical_records_created_at ON public.medical_records(created_at DESC);
 
--- 5. Create Storage Bucket for Audit Photos
+-- 4c. Practice Images Pool (Dumped via Manager Portal)
+CREATE TABLE IF NOT EXISTS public.practice_images (
+    id TEXT PRIMARY KEY,
+    file_name TEXT UNIQUE NOT NULL,
+    image_url TEXT NOT NULL,
+    file_size TEXT,
+    ground_truth JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_practice_images_filename ON public.practice_images(file_name);
+
+-- 4d. Candidate Completed Images (Tracks completed folder & QA metrics per user)
+CREATE TABLE IF NOT EXISTS public.candidate_completed_images (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL,
+    image_name TEXT NOT NULL,
+    record_no TEXT,
+    accuracy_percent NUMERIC(5,2) NOT NULL,
+    mistakes_count INTEGER NOT NULL DEFAULT 0,
+    total_fields INTEGER NOT NULL DEFAULT 0,
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_candidate_image UNIQUE (operator_id, image_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_completed_op ON public.candidate_completed_images(operator_id);
+
+-- 5. Create Storage Buckets for Audit Photos and Practice Images
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('audit-photos', 'audit-photos', true)
+VALUES 
+  ('audit-photos', 'audit-photos', true),
+  ('practice-images', 'practice-images', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 6. Storage Bucket Policy: Allow authenticated / service uploads
@@ -81,6 +110,14 @@ USING (bucket_id = 'audit-photos');
 CREATE POLICY "Allow upload of audit photos"
 ON storage.objects FOR INSERT
 WITH CHECK (bucket_id = 'audit-photos');
+
+CREATE POLICY "Allow public read of practice images"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'practice-images');
+
+CREATE POLICY "Allow upload of practice images"
+ON storage.objects FOR INSERT
+WITH CHECK (bucket_id = 'practice-images');
 
 -- 7. Insert Initial Seed Employees (Demo accounts with hashed passwords)
 INSERT INTO public.employees (id, username, name, password_hash, status)

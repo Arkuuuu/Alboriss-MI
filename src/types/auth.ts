@@ -74,3 +74,54 @@ export interface OperatorAnalytics {
   lastActive: string;
   status: "online" | "idle" | "offline";
 }
+
+export interface PracticeImage {
+  id: string;
+  fileName: string;
+  imageUrl: string;
+  fileSize?: string;
+  groundTruth: Record<string, string>;
+  uploadedAt: string;
+}
+
+export interface CandidateCompletedImage {
+  id: string;
+  operatorId: string;
+  imageName: string;
+  recordNo?: string;
+  accuracyPercent: number;
+  mistakesCount: number;
+  totalFields: number;
+  completedAt: string;
+}
+
+export interface FieldDiscrepancy {
+  field: string;
+  label: string;
+  expected: string;
+  actual: string;
+  isMatch: boolean;
+}
+
+export interface QualityAuditResult {
+  imageName: string;
+  accuracyPercent: number;
+  mistakesCount: number;
+  totalFields: number;
+  passedStandard: boolean; // accuracy >= 95.0%
+  discrepancies: FieldDiscrepancy[];
+  cumulativeMistakes: number;
+  cumulativeAccuracy: number;
+  totalImagesCompleted: number;
+}
+
+export interface CandidateQASummary {
+  operatorId: string;
+  operatorName: string;
+  completedCount: number;
+  totalMistakes: number;
+  averageAccuracy: number;
+  isQualified: boolean; // >= 95%
+  lastCompletedAt?: string;
+}
+
