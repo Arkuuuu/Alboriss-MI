@@ -21,3 +21,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Failed to load QA summary." }, { status: 500 });
   }
 }
+

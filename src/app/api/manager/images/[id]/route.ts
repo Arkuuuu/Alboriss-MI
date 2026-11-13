@@ -20,3 +20,4 @@ export async function DELETE(
     return NextResponse.json({ error: "Failed to delete practice image." }, { status: 500 });
   }
 }
+

@@ -30,3 +30,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Failed to load QA leaderboard." }, { status: 500 });
   }
 }
+

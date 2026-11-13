@@ -28,3 +28,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Failed to load practice images." }, { status: 500 });
   }
 }
+

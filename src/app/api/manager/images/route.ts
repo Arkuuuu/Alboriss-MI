@@ -48,3 +48,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to dump practice image." }, { status: 500 });
   }
 }
+

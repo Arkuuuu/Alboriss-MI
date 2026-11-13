@@ -16,6 +16,8 @@ export interface Employee {
   status: "active" | "suspended";
   createdAt: string;
   lastLoginAt?: string;
+  enrolledFaceUrl?: string;
+  enrolledBiometricHash?: string;
 }
 
 export interface DeviceTelemetry {
@@ -36,7 +38,33 @@ export interface LocationTelemetry {
   country?: string;
   latitude?: number;
   longitude?: number;
+  accuracy?: number; // GPS accuracy in meters
+  altitude?: number | null;
+  speed?: number | null;
   source: "browser_gps" | "ip_lookup" | "approximate";
+}
+
+export interface NetworkTelemetry {
+  effectiveType?: string; // e.g. "4g", "3g", "wifi"
+  downlinkMbps?: number; // Bandwidth e.g. 15.2 Mbps
+  rttMs?: number; // Round-trip latency e.g. 45 ms
+  connectionType?: string; // "wifi" | "cellular" | "ethernet"
+  saveData?: boolean;
+  localIp?: string; // e.g. "192.168.1.104"
+  publicIp?: string;
+  networkOnline?: boolean;
+}
+
+export interface FaceVerificationTelemetry {
+  faceDetected: boolean;
+  livenessPassed: boolean;
+  livenessScore: number; // 0.0 - 1.0
+  isStaticPhoto: boolean;
+  isScreenSpoof: boolean;
+  blinkDetected: boolean;
+  motionVariance: number;
+  biometricSignature?: string;
+  timestamp: string;
 }
 
 export interface LoginAuditEntry {
@@ -48,6 +76,8 @@ export interface LoginAuditEntry {
   userAgent?: string;
   location?: LocationTelemetry;
   device?: DeviceTelemetry;
+  network?: NetworkTelemetry;
+  faceVerification?: FaceVerificationTelemetry;
   photoDataUrl: string; // Stored URL or base64 verification snapshot
   status: "success" | "failed";
   failureReason?: string;

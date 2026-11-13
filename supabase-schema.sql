@@ -14,13 +14,15 @@ CREATE TABLE IF NOT EXISTS public.employees (
     password_hash TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_login_at TIMESTAMPTZ
+    last_login_at TIMESTAMPTZ,
+    enrolled_face_url TEXT,
+    enrolled_biometric_hash TEXT
 );
 
 -- Index on username for fast authentication lookup
 CREATE INDEX IF NOT EXISTS idx_employees_username ON public.employees(username);
 
--- 3. Login Audit Logs Table (Captures live photo, IP, location, device details)
+-- 3. Login Audit Logs Table (Captures live photo, IP, location, device details, WiFi & Face Verification)
 CREATE TABLE IF NOT EXISTS public.login_audit_logs (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -29,6 +31,8 @@ CREATE TABLE IF NOT EXISTS public.login_audit_logs (
     ip_address TEXT NOT NULL,
     location JSONB DEFAULT '{}'::jsonb,
     device JSONB DEFAULT '{}'::jsonb,
+    network JSONB DEFAULT '{}'::jsonb,
+    face_verification JSONB DEFAULT '{}'::jsonb,
     photo_url TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
     failure_reason TEXT

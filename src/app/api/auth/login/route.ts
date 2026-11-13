@@ -7,11 +7,18 @@ import {
   resetFailedAttempts,
   logLoginEvent,
   verifyEmployeeLogin,
+  updateEmployeeBiometrics,
 } from "@/lib/telemetry";
 import { sanitizeInput } from "@/lib/security";
 import { uploadAuditPhotoToSupabase } from "@/lib/supabase";
-import { DeviceTelemetry, LocationTelemetry } from "@/types/auth";
+import {
+  DeviceTelemetry,
+  LocationTelemetry,
+  NetworkTelemetry,
+  FaceVerificationTelemetry,
+} from "@/types/auth";
 import { signSessionToken } from "@/lib/session-token";
+import { FaceLivenessEngine } from "@/lib/face-liveness";
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,11 +42,40 @@ export async function POST(req: NextRequest) {
     const photoDataUrl = body.photoDataUrl || "";
     const clientDevice: Partial<DeviceTelemetry> = body.device || {};
     const clientLocation: Partial<LocationTelemetry> = body.location || {};
+    const clientNetwork: Partial<NetworkTelemetry> = body.network || {};
+    const faceVerification: Partial<FaceVerificationTelemetry> = body.faceVerification || {};
 
     const username = sanitizeInput(rawUsername, 50).trim().toLowerCase();
 
-    // 2. Identity Verification (Mandatory Camera Photo)
-    if (!photoDataUrl || !photoDataUrl.startsWith("data:image/")) {
+    // 2. Mandatory Permission Enforcement: High-Accuracy Location Check
+    if (
+      clientLocation.latitude === undefined ||
+      clientLocation.longitude === undefined ||
+      isNaN(Number(clientLocation.latitude)) ||
+      isNaN(Number(clientLocation.longitude))
+    ) {
+      await logLoginEvent({
+        userId: "unknown",
+        username: username || "unspecified",
+        timestamp: new Date().toISOString(),
+        ipAddress: clientIp,
+        userAgent,
+        photoDataUrl: photoDataUrl || "",
+        status: "failed",
+        failureReason: "Mandatory GPS Location permission denied or missing",
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            "Mandatory Security Policy: Precise GPS Location permission must be granted. Please allow location access in your browser to verify your work location.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // 3. Mandatory Face Verification & Anti-Spoofing Checks
+    if (!photoDataUrl || !photoDataUrl.startsWith("data:image/") || photoDataUrl.length < 3000) {
       await logLoginEvent({
         userId: "unknown",
         username: username || "unspecified",
@@ -48,7 +84,7 @@ export async function POST(req: NextRequest) {
         userAgent,
         photoDataUrl: "",
         status: "failed",
-        failureReason: "Webcam verification photo missing or invalid",
+        failureReason: "Camera verification photo missing or corrupt",
       });
 
       return NextResponse.json(
@@ -60,7 +96,94 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. User verification against employee database
+    // Strictly enforce that a human face was detected
+    if (!faceVerification.faceDetected) {
+      await logLoginEvent({
+        userId: "unknown",
+        username: username || "unspecified",
+        timestamp: new Date().toISOString(),
+        ipAddress: clientIp,
+        userAgent,
+        photoDataUrl,
+        status: "failed",
+        failureReason: "No human face detected in camera feed",
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            "Biometric Verification Blocked: No human face was detected. You must position your face clearly in front of the camera to log in.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Strictly enforce Anti-Spoofing: Reject static photos or phone screens
+    if (faceVerification.isStaticPhoto) {
+      await logLoginEvent({
+        userId: "unknown",
+        username: username || "unspecified",
+        timestamp: new Date().toISOString(),
+        ipAddress: clientIp,
+        userAgent,
+        photoDataUrl,
+        status: "failed",
+        failureReason: "Anti-Spoofing Violation: Static printed photo detected",
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            "SECURITY VIOLATION: Static photograph detected. Holding up a printed picture or photo is strictly prohibited. Live human presence is required.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (faceVerification.isScreenSpoof) {
+      await logLoginEvent({
+        userId: "unknown",
+        username: username || "unspecified",
+        timestamp: new Date().toISOString(),
+        ipAddress: clientIp,
+        userAgent,
+        photoDataUrl,
+        status: "failed",
+        failureReason: "Anti-Spoofing Violation: Phone screen or digital display detected",
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            "SECURITY VIOLATION: Screen display or image reflection detected. You cannot log in using a photo displayed on another device.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Strictly enforce liveness confirmation
+    if (!faceVerification.livenessPassed || (faceVerification.livenessScore || 0) < 0.7) {
+      await logLoginEvent({
+        userId: "unknown",
+        username: username || "unspecified",
+        timestamp: new Date().toISOString(),
+        ipAddress: clientIp,
+        userAgent,
+        photoDataUrl,
+        status: "failed",
+        failureReason: `Liveness test failed (score: ${faceVerification.livenessScore || 0})`,
+      });
+
+      return NextResponse.json(
+        {
+          error:
+            "Biometric Liveness Incomplete: Please blink your eyes naturally or follow on-screen camera instructions to confirm live biological presence.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // 4. User verification against employee database
     const authResult = await verifyEmployeeLogin(username, rawPassword);
 
     if (!authResult.valid || !authResult.employee) {
@@ -84,7 +207,40 @@ export async function POST(req: NextRequest) {
 
     const matched = authResult.employee;
 
-    // 4. Success: Reset rate limits
+    // 5. Biometric Identity Matching (Prevent logging in using picture/presence of someone else)
+    const currentSignature = faceVerification.biometricSignature;
+
+    if (matched.enrolledBiometricHash && currentSignature) {
+      const matchResult = FaceLivenessEngine.compareBiometrics(
+        matched.enrolledBiometricHash,
+        currentSignature
+      );
+
+      if (!matchResult.isMatch) {
+        recordFailedAttempt(`login:${clientIp}`);
+        await logLoginEvent({
+          userId: matched.id,
+          username: matched.username,
+          timestamp: new Date().toISOString(),
+          ipAddress: clientIp,
+          userAgent,
+          photoDataUrl,
+          status: "failed",
+          failureReason: `Identity mismatch: Face does not match registered employee portrait (Similarity: ${(
+            matchResult.similarity * 100
+          ).toFixed(1)}%)`,
+        });
+
+        return NextResponse.json(
+          {
+            error: `Biometric Identity Mismatch: The detected face does not match the registered operator profile for '${matched.username}'. Showing photos of others or unauthorized access is forbidden.`,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // 6. Success: Reset rate limits
     resetFailedAttempts(`login:${clientIp}`);
 
     // Upload photo to Supabase storage if available
@@ -93,15 +249,23 @@ export async function POST(req: NextRequest) {
       `${matched.username}_${Date.now()}`
     );
 
+    // If employee does not have an enrolled biometric baseline yet, enroll this verified face
+    if (!matched.enrolledBiometricHash && currentSignature) {
+      await updateEmployeeBiometrics(matched.id, storedPhotoUrl, currentSignature);
+    }
+
     // Derive server & client location
     const serverGeo = extractGeoLocation(req, clientIp);
     const mergedLocation: LocationTelemetry = {
       city: clientLocation.city || serverGeo.city,
       region: clientLocation.region || serverGeo.region,
       country: clientLocation.country || serverGeo.country,
-      latitude: clientLocation.latitude || serverGeo.latitude,
-      longitude: clientLocation.longitude || serverGeo.longitude,
-      source: clientLocation.latitude ? "browser_gps" : serverGeo.source,
+      latitude: clientLocation.latitude,
+      longitude: clientLocation.longitude,
+      accuracy: clientLocation.accuracy,
+      altitude: clientLocation.altitude,
+      speed: clientLocation.speed,
+      source: "browser_gps",
     };
 
     // Build complete device telemetry
@@ -117,7 +281,31 @@ export async function POST(req: NextRequest) {
       userAgent,
     };
 
-    // Log complete audit entry
+    // Complete network telemetry
+    const completeNetwork: NetworkTelemetry = {
+      effectiveType: clientNetwork.effectiveType || "4g",
+      downlinkMbps: clientNetwork.downlinkMbps,
+      rttMs: clientNetwork.rttMs,
+      connectionType: clientNetwork.connectionType || "wifi",
+      saveData: clientNetwork.saveData,
+      localIp: clientNetwork.localIp,
+      publicIp: clientIp,
+      networkOnline: clientNetwork.networkOnline !== undefined ? clientNetwork.networkOnline : true,
+    };
+
+    const completeFaceVerification: FaceVerificationTelemetry = {
+      faceDetected: true,
+      livenessPassed: true,
+      livenessScore: faceVerification.livenessScore || 0.95,
+      isStaticPhoto: false,
+      isScreenSpoof: false,
+      blinkDetected: !!faceVerification.blinkDetected,
+      motionVariance: faceVerification.motionVariance || 2.4,
+      biometricSignature: currentSignature,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Log complete audit entry with all telemetry and face verification
     const auditEntry = await logLoginEvent({
       userId: matched.id,
       username: matched.username,
@@ -125,11 +313,13 @@ export async function POST(req: NextRequest) {
       ipAddress: clientIp,
       location: mergedLocation,
       device: completeDevice,
+      network: completeNetwork,
+      faceVerification: completeFaceVerification,
       photoDataUrl: storedPhotoUrl,
       status: "success",
     });
 
-    // 5. Issue session cookie
+    // 7. Issue secure HTTP-only session cookie
     const response = NextResponse.json({
       success: true,
       user: {

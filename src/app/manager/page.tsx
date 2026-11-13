@@ -853,10 +853,11 @@ export default function ManagerPortal() {
                 <thead className="bg-[#0a0f1d] text-[#94a3b8] text-xs uppercase tracking-wider border-b border-[#1e293b]">
                   <tr>
                     <th className="py-3.5 px-6 font-semibold">Verification Photo</th>
+                    <th className="py-3.5 px-6 font-semibold">Biometrics & Liveness</th>
                     <th className="py-3.5 px-6 font-semibold">Timestamp</th>
                     <th className="py-3.5 px-6 font-semibold">Employee</th>
-                    <th className="py-3.5 px-6 font-semibold">Client IP & Location</th>
-                    <th className="py-3.5 px-6 font-semibold">Device & Environment</th>
+                    <th className="py-3.5 px-6 font-semibold">Client IP & GPS Location</th>
+                    <th className="py-3.5 px-6 font-semibold">Device & WiFi Network</th>
                     <th className="py-3.5 px-6 font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -888,6 +889,22 @@ export default function ManagerPortal() {
                             </span>
                           )}
                         </td>
+                        <td className="py-3 px-6">
+                          {log.faceVerification?.faceDetected ? (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                <span>✓</span> Live Face Verified
+                              </span>
+                              <div className="text-[10px] text-[#94a3b8] font-mono">
+                                Liveness: {Math.round((log.faceVerification.livenessScore || 0.95) * 100)}% • Anti-Spoof
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">
+                              Legacy / Unverified
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 px-6 text-xs text-[#cbd5e1] whitespace-nowrap">
                           {new Date(log.timestamp).toLocaleString()}
                         </td>
@@ -899,37 +916,68 @@ export default function ManagerPortal() {
                         </td>
                         <td className="py-3 px-6">
                           <div className="font-mono text-xs text-cyan-300">
-                            {log.ipAddress}
+                            IP: {log.ipAddress}
                           </div>
+                          {log.network?.localIp && (
+                            <div className="text-[10px] text-[#94a3b8] font-mono">
+                              Local LAN: {log.network.localIp}
+                            </div>
+                          )}
                           <div className="text-[11px] text-[#94a3b8]">
                             {log.location?.city ? `${log.location.city}, ` : ""}
                             {log.location?.country || "Home Network"}
                           </div>
+                          {log.location?.latitude && log.location?.longitude && (
+                            <div className="mt-1">
+                              <a
+                                href={`https://www.google.com/maps?q=${log.location.latitude},${log.location.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-mono flex items-center gap-1"
+                              >
+                                <span>📍</span> GPS: {log.location.latitude}, {log.location.longitude}
+                                {log.location.accuracy ? ` (±${log.location.accuracy}m)` : ""}
+                              </a>
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-6 text-xs text-[#cbd5e1]">
                           <div className="font-medium text-white">
                             {log.device?.os || "PC"} — {log.device?.browser || "Browser"}
                           </div>
-                          <div className="text-[11px] text-[#94a3b8]">
+                          <div className="text-[10px] text-[#94a3b8]">
                             Res: {log.device?.screenResolution || "Unknown"} | TZ: {log.device?.timezone || "UTC"}
                           </div>
+                          {log.network && (
+                            <div className="text-[10px] text-cyan-200 mt-0.5 font-mono">
+                              {log.network.connectionType?.toUpperCase() || "WIFI"} •{" "}
+                              {log.network.effectiveType?.toUpperCase() || "4G"}{" "}
+                              {log.network.downlinkMbps ? `• ${log.network.downlinkMbps} Mbps` : ""}{" "}
+                              {log.network.rttMs ? `• ${log.network.rttMs}ms ping` : ""}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-6">
                           <span
                             className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${
                               log.status === "success"
-                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                                : "bg-red-950 text-red-400 border border-red-800"
+                                  ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                  : "bg-red-950 text-red-400 border border-red-800"
                             }`}
                           >
                             {log.status.toUpperCase()}
                           </span>
+                          {log.failureReason && (
+                            <div className="text-[10px] text-red-400 mt-1 max-w-[140px] truncate" title={log.failureReason}>
+                              {log.failureReason}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="text-center py-8 text-[#64748b]">
+                      <td colSpan={7} className="text-center py-8 text-[#64748b]">
                         No audit events recorded yet.
                       </td>
                     </tr>

@@ -239,7 +239,7 @@ export async function getEmployees(): Promise<Omit<Employee, "passwordHash">[]> 
     try {
       const { data, error } = await supabaseAdmin
         .from("employees")
-        .select("id, username, name, status, created_at, last_login_at")
+        .select("id, username, name, status, created_at, last_login_at, enrolled_face_url, enrolled_biometric_hash")
         .order("created_at", { ascending: false });
 
       if (!error && data) {
@@ -250,6 +250,8 @@ export async function getEmployees(): Promise<Omit<Employee, "passwordHash">[]> 
           status: d.status,
           createdAt: d.created_at,
           lastLoginAt: d.last_login_at,
+          enrolledFaceUrl: d.enrolled_face_url,
+          enrolledBiometricHash: d.enrolled_biometric_hash,
         }));
       }
     } catch (e) {
@@ -395,6 +397,8 @@ export async function verifyEmployeeLogin(
               status: data.status,
               createdAt: data.created_at,
               lastLoginAt: new Date().toISOString(),
+              enrolledFaceUrl: data.enrolled_face_url,
+              enrolledBiometricHash: data.enrolled_biometric_hash,
             },
           };
         }
@@ -423,6 +427,32 @@ export async function verifyEmployeeLogin(
   return { valid: true, employee: emp };
 }
 
+export async function updateEmployeeBiometrics(
+  id: string,
+  enrolledFaceUrl: string,
+  enrolledBiometricHash: string
+): Promise<void> {
+  const emp = employees.find((e) => e.id === id);
+  if (emp) {
+    emp.enrolledFaceUrl = enrolledFaceUrl;
+    emp.enrolledBiometricHash = enrolledBiometricHash;
+  }
+
+  if (isSupabaseConfigured && supabaseAdmin) {
+    try {
+      await supabaseAdmin
+        .from("employees")
+        .update({
+          enrolled_face_url: enrolledFaceUrl,
+          enrolled_biometric_hash: enrolledBiometricHash,
+        })
+        .eq("id", id);
+    } catch (e) {
+      console.warn("Supabase updateEmployeeBiometrics error:", e);
+    }
+  }
+}
+
 /* ==========================================================================
    AUDIT LOGGING WITH WEBCAM SNAPSHOT, IP & FULL DEVICE/LOCATION TELEMETRY
    ========================================================================== */
@@ -448,6 +478,8 @@ export async function logLoginEvent(
         ip_address: newEntry.ipAddress,
         location: newEntry.location || {},
         device: newEntry.device || {},
+        network: newEntry.network || {},
+        face_verification: newEntry.faceVerification || {},
         photo_url: newEntry.photoDataUrl,
         status: newEntry.status,
         failure_reason: newEntry.failureReason || null,
@@ -478,6 +510,8 @@ export async function getAuditLogs(): Promise<LoginAuditEntry[]> {
           ipAddress: d.ip_address,
           location: d.location,
           device: d.device,
+          network: d.network,
+          faceVerification: d.face_verification,
           photoDataUrl: d.photo_url,
           status: d.status,
           failureReason: d.failure_reason,

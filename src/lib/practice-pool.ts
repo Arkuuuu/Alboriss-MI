@@ -592,3 +592,4 @@ export async function getAllCandidatesQASummary(): Promise<CandidateQASummary[]>
 
   return results;
 }
+
